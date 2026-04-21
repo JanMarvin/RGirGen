@@ -37,7 +37,13 @@ gi_type_to_map <- function(gi_name) {
     "GQuark"   = list(d="GQuark",      u="(GQuark)INTEGER({{X}})[0]",     b="Rf_ScalarInteger((int)({{V}}))",   p=FALSE, k=TRUE),
     "GType"    = list(d="GType",       u="(GType)REAL({{X}})[0]",         b="Rf_ScalarReal((double)({{V}}))",   p=FALSE, k=TRUE),
     "utf8"     = list(d="const char*", u="CHAR(STRING_ELT({{X}},0))",     b="Rf_mkString({{V}} ? {{V}} : \"\")",p=FALSE, k=TRUE),
-    "filename" = list(d="const char*", u="CHAR(STRING_ELT({{X}},0))",     b="Rf_mkString({{V}} ? {{V}} : \"\")",p=FALSE, k=TRUE)
+    "filename" = list(d="const char*", u="CHAR(STRING_ELT({{X}},0))",     b="Rf_mkString({{V}} ? {{V}} : \"\")",p=FALSE, k=TRUE),
+    "long"     = list(d="long",        u="(long)REAL({{X}})[0]",          b="Rf_ScalarReal((double)({{V}}))",   p=FALSE, k=TRUE),
+    "time_t"   = list(d="time_t",      u="(time_t)REAL({{X}})[0]",        b="Rf_ScalarReal((double)({{V}}))",   p=FALSE, k=TRUE),
+    "GStrv"    = list(d="GStrv",   u="NULL", b="_box_GStrv({{V}})", p=TRUE, k=TRUE),
+    "char**"   = list(d="char**",  u="NULL", b="_box_GStrv({{V}})", p=TRUE, k=TRUE),
+    "const gchar**"  = list(d="const gchar**", u="NULL", b="_box_GStrv((char**){{V}})", p=TRUE, k=TRUE),
+    "const gchar*const*" = list(d="const gchar*const*", u="NULL", b="_box_GStrv((char**){{V}})", p=TRUE, k=TRUE)
   )
   if (!is.null(gi_name) && !is.na(gi_name) && gi_name %in% names(m)) {
     e <- m[[gi_name]]
