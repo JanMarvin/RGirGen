@@ -48,6 +48,11 @@ generate_r_function <- function(fn, namespace) {
   if (grepl("^g_atomic_|^g_once_init_|^g_pointer_bit_", fn$c_symbol)) return("")
   if (grepl("^g_io_module_", fn$c_symbol)) return("")
 
+  # matching generate_c.R
+  if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_", fn$c_symbol)) {
+    return("")
+  }
+
   # Skip platform-specific functions
   platform_function_patterns <- c(
     "^gtk_page_setup_unix_dialog_",
@@ -206,6 +211,27 @@ generate_r_function <- function(fn, namespace) {
   )
   roxygen_block <- paste(roxygen_lines, collapse = "\n")
 
+  # Identify what the C function returns
+  # ret_gi is the return type of the C function itself
+  ret_gi <- if (is.null(fn$return_type$gi)) "none" else fn$return_type$gi
+
+  # out_params are variables passed by reference (the ones causing the $data, $iter issues)
+  out_params <- Filter(function(p) p$direction %in% c("out", "inout"), fn$params)
+
+  # --- AUTO-UNWRAP LOGIC ---
+  # If it returns a value and has NO out-params, unwrap $result
+  # If it returns void but has exactly ONE out-param, unwrap that param's name
+
+  unwrap_suffix <- ""
+  if (ret_gi != "none" && length(out_params) == 0) {
+    unwrap_suffix <- "$result"
+  } else if (ret_gi == "none" && length(out_params) == 1) {
+    # Sanitize the out-param name just like we did for args
+    out_name <- gsub("[^a-zA-Z0-9_]", "_", out_params[[1]]$name)
+    unwrap_suffix <- paste0("$", out_name)
+  }
+
+  # Build the final function string
   paste0("\n", roxygen_block, "\n", r_name, " <- function(", args_csv, ") {\n",
-         "  .Call(\"R_", fn$c_symbol, "\"", call_args, ")\n}\n")
+         "  .Call(\"R_", fn$c_symbol, "\"", call_args, ")", unwrap_suffix, "\n}\n")
 }
