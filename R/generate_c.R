@@ -385,7 +385,11 @@ generate_c_function <- function(fn) {
 
       final_val <- if (it$is_ptr) sprintf("(%s == NULL) ? R_NilValue : %s", it$var, box_expr) else box_expr
       body <- paste0(body, sprintf("  SET_VECTOR_ELT(_ans, %d, %s);\n", i-1, final_val))
-      body <- paste0(body, sprintf("  Rf_setAttrib(VECTOR_ELT(_ans, %d), Rf_install(\"glib_type\"), Rf_mkString(\"%s\"));\n", i-1, it$type$gi))
+
+      body <- paste0(body, sprintf("  if (VECTOR_ELT(_ans, %d) != R_NilValue) {\n", i-1))
+      body <- paste0(body, sprintf("    Rf_setAttrib(VECTOR_ELT(_ans, %d), Rf_install(\"glib_type\"), Rf_mkString(\"%s\"));\n", i-1, it$type$gi))
+      body <- paste0(body, "  }\n")
+
       body <- paste0(body, sprintf("  SET_STRING_ELT(_ans_names, %d, Rf_mkChar(\"%s\"));\n", i-1, it$name))
     }
     body <- paste0(body, "  Rf_setAttrib(_ans, R_NamesSymbol, _ans_names);\n  UNPROTECT(2);\n  return _ans;")
