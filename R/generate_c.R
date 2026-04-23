@@ -375,8 +375,12 @@ generate_c_function <- function(fn) {
       } else if (is_item_scalar) {
         sprintf("Rf_ScalarInteger((int)(%s))", val_expr)
       } else {
-        standard_box <- gsub("\\{\\{V\\}\\}", val_expr, map$box)
-        sprintf("tag_pointer(%s, \"%s\")", standard_box, type_label)
+        if (it$is_ptr && !map$known) {
+          sprintf("make_gobject_ptr((gpointer)%s)", val_expr)
+        } else {
+          standard_box <- gsub("\\{\\{V\\}\\}", val_expr, map$box)
+          sprintf("tag_pointer(%s, \"%s\")", standard_box, type_label)
+        }
       }
 
       final_val <- if (it$is_ptr) sprintf("(%s == NULL) ? R_NilValue : %s", it$var, box_expr) else box_expr
