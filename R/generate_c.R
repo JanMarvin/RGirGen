@@ -370,7 +370,10 @@ generate_c_function <- function(fn) {
 
       type_label <- if (nonempty(it$type$gi)) it$type$gi else "gpointer"
 
-      box_expr <- if (it$type$gi %in% c("utf8", "filename") && !grepl("\\*\\s*\\*", it$type$c)) {
+      box_expr <- if (bare_ct %in% KNOWN_STRUCT_TYPES && !it$is_ptr) {
+        # Copy the stack-allocated struct into a new heap-allocated ExternalPtr
+        sprintf("make_boxed_struct(&%s, sizeof(%s))", it$var, bare_ct)
+      } else if (it$type$gi %in% c("utf8", "filename") && !grepl("\\*\\s*\\*", it$type$c)) {
         sprintf("Rf_mkString(%s ? (const char*)%s : \"\")", val_expr, val_expr)
       } else if (is_item_scalar) {
         sprintf("Rf_ScalarInteger((int)(%s))", val_expr)
