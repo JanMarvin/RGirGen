@@ -184,7 +184,12 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL) {
     "#pragma GCC diagnostic ignored \"-Wdeprecated-declarations\"",
     "#pragma GCC diagnostic ignored \"-Wint-to-pointer-cast\"",
     "#pragma GCC diagnostic ignored \"-Wpointer-to-int-cast\"",
+    "#ifdef __clang__",
     "#pragma GCC diagnostic ignored \"-Wimplicit-enum-enum-cast\"",
+    "#endif",
+    "#if defined(__GNUC__) && !defined(__clang__)",
+    "#pragma GCC diagnostic ignored \"-Wstringop-overflow\"",
+    "#endif",
     ""
   ), collapse = "\n")
 
