@@ -288,8 +288,10 @@ generate_c_function <- function(fn) {
   # - Skip gtk_printer_ printer things (could be enabled later if needed)
   # - Skip g_pointer_bit_
   # - Skip g_dtls_
-  # if (grepl("^g_tls_|^g_dtls_|^g_io_module_|^g_pointer_bit_|_unix_|_osx_|_win32_", fn$c_symbol)) {
-  if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_", fn$c_symbol)) {
+  # - Skip DBus (Unix-specific in practice)
+  # - Skip subprocess (Unix-specific)
+  # - Skip Unix FD, Unix user, Unix PID functions
+  if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_|^g_dbus_|^g_subprocess_|_unix_fd|_unix_user|_unix_pid", fn$c_symbol)) {
     return("")
   }
 
