@@ -111,6 +111,7 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL) {
     "#include <gtk/gtk.h>",
     "#include <glib.h>",
     "#include <stdint.h>",
+    "#include <string.h>",
     plain_includes,
     guarded_unix,
     "",
