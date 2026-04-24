@@ -114,6 +114,17 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL) {
     plain_includes,
     guarded_unix,
     "",
+    "/* Safe pointer extraction with validation */",
+    "static inline void* get_ptr_internal(SEXP s, const char* func) __attribute__((unused));",
+    "static inline void* get_ptr_internal(SEXP s, const char* func) {",
+    "  if (s == R_NilValue) return NULL;",
+    "  if (TYPEOF(s) != EXTPTRSXP) {",
+    "    Rf_error(\"%s: expected external pointer, got %s\", func, Rf_type2char(TYPEOF(s)));",
+    "  }",
+    "  return R_ExternalPtrAddr(s);",
+    "}",
+    "#define get_ptr(s) get_ptr_internal(s, __func__)",
+    "",
     "/* Finalizer for heap-allocated value structs */",
     "static void _finalizer_g_free(SEXP s) __attribute__((unused));",
     "static void _finalizer_g_free(SEXP s) {",
@@ -210,7 +221,7 @@ resolve_in_param <- function(p, s_nm) {
 
   if (cls == "array") {
     decl <- if (nonempty(ct)) ct else "gpointer"
-    return(list(decl_type = decl, unbox_expr = sprintf("R_ExternalPtrAddr(%s)", s_nm)))
+    return(list(decl_type = decl, unbox_expr = sprintf("get_ptr(%s)", s_nm)))
   }
 
   if (cls == "inttype") {
@@ -233,7 +244,7 @@ resolve_in_param <- function(p, s_nm) {
       return(list(decl_type  = ct, unbox_expr = sprintf("(%s)RAW(%s)", ct, s_nm)))
     if (gi %in% c("guint32","gint32","guint","gint","guint16","gint16"))
       return(list(decl_type  = ct, unbox_expr = sprintf("(%s)INTEGER(%s)", ct, s_nm)))
-    return(list(decl_type  = ct, unbox_expr = sprintf("R_ExternalPtrAddr(%s)", s_nm)))
+    return(list(decl_type  = ct, unbox_expr = sprintf("get_ptr(%s)", s_nm)))
   }
 
   if (cls == "scalar") {
@@ -243,7 +254,7 @@ resolve_in_param <- function(p, s_nm) {
 
   decl <- if (nonempty(ct)) ct else "gpointer"
   if (trimws(decl) %in% posix_structs) decl <- paste("struct", decl)
-  list(decl_type  = decl, unbox_expr = sprintf("R_ExternalPtrAddr(%s)", s_nm))
+  list(decl_type  = decl, unbox_expr = sprintf("get_ptr(%s)", s_nm))
 }
 
 # ---------------------------------------------------------------------------
