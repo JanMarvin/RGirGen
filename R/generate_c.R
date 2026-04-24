@@ -280,8 +280,66 @@ resolve_in_param <- function(p, s_nm) {
 generate_c_function <- function(fn) {
   if (isTRUE(fn$moved_to) || !nonempty(fn$c_symbol)) return("")
 
-  # 1. EXCLUSION FILTER:
+  # ============================================================================
+  # GTK Version Compatibility Filter
+  # ============================================================================
+  # Define minimum required versions per namespace for maximum compatibility
+  # These target Ubuntu 24.04 LTS which has: GLib 2.80, GTK 4.14
+  MIN_VERSIONS <- list(
+    "GLib"   = "2.56",   # Very stable, Ubuntu 24.04 has 2.80
+    "GObject"= "2.56",   # Part of GLib
+    "Gio"    = "2.56",   # Part of GLib
+    "Gdk"    = "4.12",   # Ubuntu 24.04 has GTK 4.14
+    "Gtk"    = "4.12"    # Ubuntu 24.04 has GTK 4.14
+  )
+
+  # Determine which namespace this function belongs to
+  namespace <- NULL
+  if (!is.null(fn$c_symbol)) {
+    # Extract namespace from C symbol prefix
+    if (grepl("^g_(?!tk_|dk_)", fn$c_symbol, perl=TRUE)) {
+      if (grepl("^g_object_", fn$c_symbol)) namespace <- "GObject"
+      else if (grepl("^g_file_|^g_app_|^g_settings_|^g_dbus_", fn$c_symbol)) namespace <- "Gio"
+      else namespace <- "GLib"
+    } else if (grepl("^gdk_", fn$c_symbol)) {
+      namespace <- "Gdk"
+    } else if (grepl("^gtk_", fn$c_symbol)) {
+      namespace <- "Gtk"
+    }
+  }
+
+  # Check GIR version attribute (now extracted by parser)
+  if (!is.null(namespace) && !is.null(fn$version) && !is.na(fn$version)) {
+    min_version <- MIN_VERSIONS[[namespace]]
+    if (!is.null(min_version) && compareVersion(fn$version, min_version) > 0) {
+      return("")  # Skip functions newer than minimum version
+    }
+  }
+
   # - Skip symbols starting with underscores (private/internal)
+
+  # Fallback: type blacklist for types introduced after 4.12
+  # This catches cases where the type is new but functions using it lack version tags
+  newer_types <- c(
+    "GdkDmabufTextureBuilder", "GdkMemoryTextureBuilder",  # 4.14
+    "GdkCicpParams", "GdkColorState",                      # 4.16
+    "GtkSymbolicPaintable",                                # 4.18
+    "GdkToplevelCapabilities",                             # 4.20
+    "GtkPopoverBin"                                        # 4.22
+  )
+
+  all_types <- paste(c(fn$return_type, sapply(fn$params, function(p) p$type)), collapse = " ")
+  for (newer_type in newer_types) {
+    if (grepl(newer_type, all_types, fixed = TRUE)) {
+      return("")
+    }
+  }
+
+  # somehow missing as well
+  if (grepl("^gdk_rgba_print|^gtk_svg_error_quark", fn$c_symbol)) {
+    return("")
+  }
+
   # - Skip OS-specific backends (OSX, Win32, Unix-specific)
   # - Skip internal module/atomic symbols
   # - Skip g_io_module symbols (internal to GIO's plugin system)

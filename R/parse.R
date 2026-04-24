@@ -64,6 +64,7 @@ parse_functions <- function(ns, int_types) {
       deprecated  = !is.na(xml2::xml_attr(f, "deprecated")),
       moved_to    = !is.na(xml2::xml_attr(f, "moved-to")),
       throws      = identical(xml2::xml_attr(f, "throws"), "1"),
+      version     = xml2::xml_attr(f, "version"),
       source_header = src_header,
       params      = parse_params(f, int_types),
       return_type = parse_type(xml2::xml_find_first(f, "./return-value"), int_types)
