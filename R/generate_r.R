@@ -103,7 +103,29 @@ generate_r_function <- function(fn, namespace) {
   }
 
   args_csv  <- paste(args, collapse=", ")
-  call_args <- if (length(args)>0) paste0(", ", args_csv) else ""
+
+  # Build call_args with automatic type conversions
+  if (length(args) > 0) {
+    converted_args <- sapply(seq_along(in_params), function(i) {
+      p <- in_params[[i]]
+      arg_name <- args[i]
+      gi <- p$type$gi
+
+      # Auto-convert to integer for integer types
+      integer_types <- c("gint", "guint", "gint8", "guint8", "gint16", "guint16",
+                         "gint32", "guint32", "gint64", "guint64", "glong", "gulong",
+                         "gsize", "gssize", "goffset")
+
+      if (!is.null(gi) && gi %in% integer_types) {
+        sprintf("as.integer(%s)", arg_name)
+      } else {
+        arg_name
+      }
+    })
+    call_args <- paste0(", ", paste(converted_args, collapse=", "))
+  } else {
+    call_args <- ""
+  }
 
   # Generate roxygen2 documentation
   # Create @param entries for each parameter
@@ -221,17 +243,28 @@ generate_r_function <- function(fn, namespace) {
   # --- AUTO-UNWRAP LOGIC ---
   # If it returns a value and has NO out-params, unwrap $result
   # If it returns void but has exactly ONE out-param, unwrap that param's name
+  # If it returns void and has NO out-params, wrap with invisible()
 
   unwrap_suffix <- ""
+  wrap_invisible <- FALSE
+
   if (ret_gi != "none" && length(out_params) == 0) {
     unwrap_suffix <- "$result"
   } else if (ret_gi == "none" && length(out_params) == 1) {
     # Sanitize the out-param name just like we did for args
     out_name <- gsub("[^a-zA-Z0-9_]", "_", out_params[[1]]$name)
     unwrap_suffix <- paste0("$", out_name)
+  } else if (ret_gi == "none" && length(out_params) == 0) {
+    # Void function with no outputs - wrap with invisible()
+    wrap_invisible <- TRUE
   }
 
   # Build the final function string
+  call_expr <- paste0(".Call(\"R_", fn$c_symbol, "\"", call_args, ")", unwrap_suffix)
+  if (wrap_invisible) {
+    call_expr <- paste0("invisible(", call_expr, ")")
+  }
+
   paste0("\n", roxygen_block, "\n", r_name, " <- function(", args_csv, ") {\n",
-         "  .Call(\"R_", fn$c_symbol, "\"", call_args, ")", unwrap_suffix, "\n}\n")
+         "  ", call_expr, "\n}\n")
 }
