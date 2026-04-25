@@ -112,9 +112,10 @@ generate_r_function <- function(fn, namespace) {
       gi <- p$type$gi
 
       # Auto-convert to integer for integer types
+      # Note: gssize, goffset, gint64, glong can be large or negative,
+      # so they're handled as numeric (REAL) in C code
       integer_types <- c("gint", "guint", "gint8", "guint8", "gint16", "guint16",
-                         "gint32", "guint32", "gint64", "guint64", "glong", "gulong",
-                         "gsize", "gssize", "goffset")
+                         "gint32", "guint32", "guint64", "gulong", "gsize")
 
       if (!is.null(gi) && gi %in% integer_types) {
         sprintf("as.integer(%s)", arg_name)

@@ -22,7 +22,7 @@ gi_type_to_map <- function(gi_name) {
     "gdouble"  = list(d="gdouble",     u="(gdouble)REAL({{X}})[0]",       b="Rf_ScalarReal((double)(size_t)({{V}}))",             p=FALSE, k=TRUE),
     "gfloat"   = list(d="gfloat",      u="(gfloat)REAL({{X}})[0]",        b="Rf_ScalarReal((double)(size_t)({{V}}))",   p=FALSE, k=TRUE),
     "gsize"    = list(d="gsize",       u="(gsize)REAL({{X}})[0]",         b="Rf_ScalarReal((double)(size_t)({{V}}))",   p=FALSE, k=TRUE),
-    "gssize"   = list(d="gssize",      u="(gssize)REAL({{X}})[0]",        b="Rf_ScalarReal((double)(size_t)({{V}}))",   p=FALSE, k=TRUE),
+    "gssize"   = list(d="gssize",      u="(gssize)REAL({{X}})[0]",        b="Rf_ScalarReal((double)(ssize_t)({{V}}))",   p=FALSE, k=TRUE),
     "goffset"  = list(d="goffset",     u="(goffset)REAL({{X}})[0]",       b="Rf_ScalarReal((double)(size_t)({{V}}))",   p=FALSE, k=TRUE),
     "glong"    = list(d="glong",       u="(glong)REAL({{X}})[0]",         b="Rf_ScalarReal((double)(size_t)({{V}}))",   p=FALSE, k=TRUE),
     "gulong"   = list(d="gulong",      u="(gulong)REAL({{X}})[0]",        b="Rf_ScalarReal((double)(size_t)({{V}}))",   p=FALSE, k=TRUE),
