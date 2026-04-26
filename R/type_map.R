@@ -23,7 +23,7 @@ gi_type_to_map <- function(gi_name) {
     "gint64"   = list(d="gint64",      u="(gint64)_unbox_numeric({{X}})",  b="Rf_ScalarReal((double)(size_t)({{V}}))", p=FALSE, k=TRUE),
     "guint64"  = list(d="guint64",     u="(guint64)_unbox_numeric({{X}})", b="Rf_ScalarReal((double)(size_t)({{V}}))", p=FALSE, k=TRUE),
     "gdouble"  = list(d="gdouble",     u="(gdouble)_unbox_numeric({{X}})", b="Rf_ScalarReal((double)(size_t)({{V}}))", p=FALSE, k=TRUE),
-    "gfloat"   = list(d="gfloat",      u="(gfloat)_unbox_numeric({{X}})",  b="Rf_ScalarReal((double)({{V}}))",         p=FALSE, k=TRUE),
+    "gfloat"   = list(d="gfloat",      u="(gfloat)_unbox_numeric({{X}})",  b="Rf_ScalarReal((double)(size_t)({{V}}))", p=FALSE, k=TRUE),
     "gsize"    = list(d="gsize",       u="(gsize)_unbox_numeric({{X}})",   b="Rf_ScalarReal((double)(size_t)({{V}}))", p=FALSE, k=TRUE),
     "gssize"   = list(d="gssize",      u="(gssize)_unbox_numeric({{X}})",  b="Rf_ScalarReal((double)(ssize_t)({{V}}))",p=FALSE, k=TRUE),
     "goffset"  = list(d="goffset",     u="(goffset)_unbox_numeric({{X}})", b="Rf_ScalarReal((double)(size_t)({{V}}))", p=FALSE, k=TRUE),
