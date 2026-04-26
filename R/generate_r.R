@@ -43,17 +43,50 @@ r_name_from_c <- function(c_symbol, namespace) {
 
 generate_r_function <- function(fn, namespace) {
   if (!nonempty(fn$c_symbol)) return("")
-  if (any(sapply(fn$params, function(p)
-    identical(p$name,"...") || identical(p$type$gi,"GLib.VarArgs")))) return("")
-  if (grepl("^g_atomic_|^g_once_init_|^g_pointer_bit_", fn$c_symbol)) return("")
-  if (grepl("^g_io_module_", fn$c_symbol)) return("")
+
+  # ============================================================================
+  # GTK Version Compatibility Filter (must match generate_c.R)
+  # ============================================================================
+  MIN_VERSIONS <- list(
+    "GLib"      = "2.56",
+    "GObject"   = "2.56",
+    "Gio"       = "2.56",
+    "Gdk"       = "4.12",
+    "Gtk"       = "4.12",
+    "Pango"     = "1.50",
+    "GdkPixbuf" = "2.42"
+  )
+
+  namespace_detect <- NULL
+  if (!is.null(fn$c_symbol)) {
+    if (grepl("^g_(?!tk_|dk_)", fn$c_symbol, perl=TRUE)) {
+      if (grepl("^g_object_", fn$c_symbol)) namespace_detect <- "GObject"
+      else if (grepl("^g_file_|^g_app_|^g_settings_|^g_dbus_", fn$c_symbol)) namespace_detect <- "Gio"
+      else namespace_detect <- "GLib"
+    } else if (grepl("^gdk_pixbuf_", fn$c_symbol)) {
+      namespace_detect <- "GdkPixbuf"
+    } else if (grepl("^gdk_", fn$c_symbol)) {
+      namespace_detect <- "Gdk"
+    } else if (grepl("^gtk_", fn$c_symbol)) {
+      namespace_detect <- "Gtk"
+    } else if (grepl("^pango_", fn$c_symbol)) {
+      namespace_detect <- "Pango"
+    }
+  }
+
+  if (!is.null(namespace_detect) && !is.null(fn$version) && !is.na(fn$version)) {
+    min_version <- MIN_VERSIONS[[namespace_detect]]
+    if (!is.null(min_version) && compareVersion(fn$version, min_version) > 0) {
+      return("")
+    }
+  }
 
   newer_types <- c(
-    "GdkDmabufTextureBuilder", "GdkMemoryTextureBuilder",  # 4.14
-    "GdkCicpParams", "GdkColorState",                      # 4.16
-    "GtkSymbolicPaintable",                                # 4.18
-    "GdkToplevelCapabilities",                             # 4.20
-    "GtkPopoverBin"                                        # 4.22
+    "GdkDmabufTextureBuilder", "GdkMemoryTextureBuilder",
+    "GdkCicpParams", "GdkColorState",
+    "GtkSymbolicPaintable",
+    "GdkToplevelCapabilities",
+    "GtkPopoverBin"
   )
 
   all_types <- paste(c(fn$return_type, sapply(fn$params, function(p) p$type)), collapse = " ")
@@ -67,32 +100,15 @@ generate_r_function <- function(fn, namespace) {
     return("")
   }
 
-  # matching generate_c.R
   if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_|^g_dbus_|^g_subprocess_|_unix_fd|_unix_user|_unix_pid|gdk_pixbuf_non_anim", fn$c_symbol)) {
     return("")
   }
 
-  # Skip platform-specific functions
-  platform_function_patterns <- c(
-    "^gtk_page_setup_unix_dialog_",
-    "^gtk_print_unix_dialog_",
-    "^gtk_print_job_",
-    "^gtk_printer_",
-    "^g_osx_app_info_",
-    "^g_file_descriptor_based_",
-    "^g_unix_connection_",
-    "^g_unix_credentials_",
-    "^g_unix_fd_",
-    "^g_unix_input_",
-    "^g_unix_mount_",
-    "^g_unix_output_",
-    "^g_unix_socket_"
-  )
+  # Skip varargs functions
+  if (any(sapply(fn$params, function(p)
+    identical(p$name,"...") || identical(p$type$gi,"GLib.VarArgs")))) return("")
 
-  if (any(sapply(platform_function_patterns, function(pattern) {
-    grepl(pattern, fn$c_symbol)
-  }))) return("")
-
+  # Skip callback functions
   if (any(sapply(fn$params, function(p) {
     if (!identical(p$direction,"in")) return(FALSE)
     gi <- p$type$gi; nonempty(gi) && grepl("Func$|Notify$|Callback$|^GLib\\.VarArgs", gi)
@@ -131,10 +147,10 @@ generate_r_function <- function(fn, namespace) {
       gi <- p$type$gi
 
       # Auto-convert to integer for integer types
-      # Note: gssize, goffset, gint64, glong can be large or negative,
+      # Note: gssize, goffset, gint64, glong, guint32 can be large or negative,
       # so they're handled as numeric (REAL) in C code
       integer_types <- c("gint", "guint", "gint8", "guint8", "gint16", "guint16",
-                         "gint32", "guint32", "guint64", "gulong", "gsize")
+                         "gint32", "guint64", "gulong", "gsize")
 
       if (!is.null(gi) && gi %in% integer_types) {
         sprintf("as.integer(%s)", arg_name)
