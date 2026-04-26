@@ -349,7 +349,8 @@ generate_c_function <- function(fn) {
   # - Skip DBus (Unix-specific in practice)
   # - Skip subprocess (Unix-specific)
   # - Skip Unix FD, Unix user, Unix PID functions
-  if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_|^g_dbus_|^g_subprocess_|_unix_fd|_unix_user|_unix_pid", fn$c_symbol)) {
+  # - Skip gdk_pixbuf_non_anim (internal pixbuf function)
+  if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_|^g_dbus_|^g_subprocess_|_unix_fd|_unix_user|_unix_pid|gdk_pixbuf_non_anim", fn$c_symbol)) {
     return("")
   }
 

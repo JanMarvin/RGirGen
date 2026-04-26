@@ -48,8 +48,27 @@ generate_r_function <- function(fn, namespace) {
   if (grepl("^g_atomic_|^g_once_init_|^g_pointer_bit_", fn$c_symbol)) return("")
   if (grepl("^g_io_module_", fn$c_symbol)) return("")
 
+  newer_types <- c(
+    "GdkDmabufTextureBuilder", "GdkMemoryTextureBuilder",  # 4.14
+    "GdkCicpParams", "GdkColorState",                      # 4.16
+    "GtkSymbolicPaintable",                                # 4.18
+    "GdkToplevelCapabilities",                             # 4.20
+    "GtkPopoverBin"                                        # 4.22
+  )
+
+  all_types <- paste(c(fn$return_type, sapply(fn$params, function(p) p$type)), collapse = " ")
+  for (newer_type in newer_types) {
+    if (grepl(newer_type, all_types, fixed = TRUE)) {
+      return("")
+    }
+  }
+
+  if (grepl("^gdk_rgba_print|^gtk_svg_error_quark", fn$c_symbol)) {
+    return("")
+  }
+
   # matching generate_c.R
-  if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_", fn$c_symbol)) {
+  if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_|^g_dbus_|^g_subprocess_|_unix_fd|_unix_user|_unix_pid|gdk_pixbuf_non_anim", fn$c_symbol)) {
     return("")
   }
 
