@@ -3,13 +3,13 @@
 parse_gir <- function(path) {
   doc <- xml2::read_xml(path)
   xml2::xml_ns_strip(doc)
-  # After xml_ns_strip: c:type -> "type", c:identifier -> "identifier"
   ns_node <- xml2::xml_find_first(doc, "//namespace")
   int_types <- build_int_type_registry(ns_node)
   list(
     namespace = xml2::xml_attr(ns_node, "name"),
     functions = parse_functions(ns_node, int_types),
     enums     = parse_enums(ns_node),
+    callbacks = parse_callbacks(ns_node, int_types),
     int_types = int_types
   )
 }
@@ -53,7 +53,6 @@ parse_functions <- function(ns, int_types) {
     c_sym <- xml2::xml_attr(f, "identifier")
     if (is.na(c_sym)) return(NULL)
 
-    # Record the source header so generate_c can emit extra #includes
     src_node   <- xml2::xml_find_first(f, "./source-position")
     src_header <- if (!inherits(src_node, "xml_missing"))
       xml2::xml_attr(src_node, "filename") else NA_character_
@@ -82,11 +81,16 @@ parse_params <- function(node, int_types) {
     direction <- if (is.na(direction)) "in" else direction
     nullable  <- identical(xml2::xml_attr(p, "nullable"), "1") ||
       identical(xml2::xml_attr(p, "allow-none"), "1")
+    is_instance <- identical(xml2::xml_name(p), "instance-parameter")
     list(
-      name      = xml2::xml_attr(p, "name"),
-      type      = parse_type(p, int_types),
-      direction = direction,
-      nullable  = nullable
+      name        = xml2::xml_attr(p, "name"),
+      type        = parse_type(p, int_types),
+      direction   = direction,
+      nullable    = nullable,
+      closure     = xml2::xml_attr(p, "closure"),
+      destroy     = xml2::xml_attr(p, "destroy"),
+      scope       = xml2::xml_attr(p, "scope"),
+      is_instance = is_instance
     )
   })
 }
@@ -104,17 +108,57 @@ parse_type <- function(node, int_types=list()) {
   }
   if (!inherits(tnode, "xml_missing")) {
     gi <- xml2::xml_attr(tnode, "name"); ct <- xattr_c(tnode)
-    int_entry <- NULL
-    if (!is.na(gi) && !is.null(int_types[[gi]])) int_entry <- int_types[[gi]]
-    # Also try the unqualified name for namespace-prefixed GI names like "GLib.Quark"
-    if (is.null(int_entry) && !is.na(gi) && grepl("\\.", gi)) {
-      gi_short <- sub("^.*\\.", "", gi)
-      if (!is.null(int_types[[gi_short]])) int_entry <- int_types[[gi_short]]
-    }
-    if (is.null(int_entry) && !is.na(ct) && !is.null(int_types[[ct]])) int_entry <- int_types[[ct]]
+    int_entry <- resolve_int_entry(gi, ct, int_types)
     return(list(gi=gi, c=ct, is_array=FALSE, int_entry=int_entry))
   }
   empty
+}
+
+# Resolve an int-type registry entry, preferring matches whose c_type agrees
+# with the parsed c:type. Avoids cross-namespace collisions (e.g. the bare
+# GI name "Variant" exists in both Pango — c:type=PangoVariant — and GLib —
+# c:type=GVariant*, which is NOT an enum and must not match Pango's entry).
+resolve_int_entry <- function(gi, ct, int_types) {
+  if ((is.null(gi) || is.na(gi)) && (is.null(ct) || is.na(ct))) return(NULL)
+
+  norm_ct <- if (!is.null(ct) && !is.na(ct)) {
+    x <- gsub("\\*", "", ct)
+    x <- sub("^const\\s+", "", trimws(x))
+    trimws(x)
+  } else {
+    NA_character_
+  }
+
+  POINTER_TYPEDEFS <- c("gpointer", "gconstpointer")
+  ct_is_pointer <- (!is.na(ct) && grepl("\\*", ct)) ||
+    (!is.na(norm_ct) && norm_ct %in% POINTER_TYPEDEFS) ||
+    (!is.null(gi) && !is.na(gi) && gi %in% POINTER_TYPEDEFS)
+  if (ct_is_pointer) return(NULL)
+
+  candidates <- list()
+  if (!is.null(gi) && !is.na(gi) && !is.null(int_types[[gi]])) {
+    candidates[[length(candidates)+1L]] <- int_types[[gi]]
+  }
+  if (!is.null(gi) && !is.na(gi) && grepl("\\.", gi)) {
+    short <- sub("^.*\\.", "", gi)
+    if (!is.null(int_types[[short]])) candidates[[length(candidates)+1L]] <- int_types[[short]]
+  }
+  if (!is.null(ct) && !is.na(ct) && !is.null(int_types[[ct]])) {
+    candidates[[length(candidates)+1L]] <- int_types[[ct]]
+  }
+  if (!is.na(norm_ct) && !is.null(int_types[[norm_ct]])) {
+    candidates[[length(candidates)+1L]] <- int_types[[norm_ct]]
+  }
+
+  if (length(candidates) == 0) return(NULL)
+
+  if (!is.na(norm_ct)) {
+    for (cand in candidates) {
+      if (!is.null(cand$c_type) && identical(cand$c_type, norm_ct)) return(cand)
+    }
+  }
+  if (!is.na(norm_ct)) return(NULL)
+  candidates[[1L]]
 }
 
 parse_enums <- function(ns_node) {
@@ -129,24 +173,8 @@ parse_enums <- function(ns_node) {
   })
 }
 
-# ---------------------------------------------------------------------------
-# enrich_type: re-apply int_entry lookup with an updated (merged) int_types.
-# Called after merging registries from multiple GIR files.
-# ---------------------------------------------------------------------------
 enrich_type <- function(type_info, int_types) {
   if (is.null(type_info) || isTRUE(type_info$is_array)) return(type_info)
-  gi <- type_info$gi
-  ct <- type_info$c
-
-  int_entry <- NULL
-  if (!is.na(gi) && !is.null(int_types[[gi]]))  int_entry <- int_types[[gi]]
-  if (is.null(int_entry) && !is.na(gi) && grepl("\\.", gi)) {
-    gi_short <- sub("^.*\\.", "", gi)
-    if (!is.null(int_types[[gi_short]])) int_entry <- int_types[[gi_short]]
-  }
-  if (is.null(int_entry) && !is.na(ct) && !is.null(int_types[[ct]]))
-    int_entry <- int_types[[ct]]
-
-  type_info$int_entry <- int_entry
+  type_info$int_entry <- resolve_int_entry(type_info$gi, type_info$c, int_types)
   type_info
 }

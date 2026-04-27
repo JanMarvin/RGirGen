@@ -1,11 +1,7 @@
-# Helper function
 nonempty <- function(x) !is.null(x) && length(x) == 1L && !is.na(x) && nchar(x) > 0
 
 #' @keywords internal
-generate_r_file <- function(parsed, namespace, seen_global = NULL) {
-  # R wrappers use their own local dedup — they do NOT write to seen_global.
-  # seen_global is only consulted to skip R wrappers for C functions that
-  # were already emitted in a previous namespace's C file.
+generate_r_file <- function(parsed, namespace, seen_global = NULL, callbacks_by_name = list()) {
   local_seen <- character()
   unique_fns <- Filter(function(f) {
     sym <- f$c_symbol
@@ -14,8 +10,7 @@ generate_r_file <- function(parsed, namespace, seen_global = NULL) {
     local_seen <<- c(local_seen, sym)
     TRUE
   }, parsed$functions)
-  # Do NOT update seen_global here — only generate_c_file owns that.
-  r_fns <- sapply(unique_fns, function(fn) generate_r_function(fn, namespace))
+  r_fns <- sapply(unique_fns, function(fn) generate_r_function(fn, namespace, callbacks_by_name))
   r_fns <- r_fns[nchar(r_fns) > 0]
 
   enums <- sapply(parsed$enums, function(e) {
@@ -27,12 +22,8 @@ generate_r_file <- function(parsed, namespace, seen_global = NULL) {
 }
 
 r_name_from_c <- function(c_symbol, namespace) {
-  # Keep full name to avoid collisions (e.g. g_application_new vs gtk_application_new)
-  # Just convert snake_case to camelCase
   pts <- strsplit(c_symbol, "_")[[1]]
   if (length(pts) <= 1) return(c_symbol)
-
-  # camelCase: first word lower, rest capitalised
   tail <- paste0(
     toupper(substring(pts[-1], 1, 1)),
     substring(pts[-1], 2),
@@ -41,12 +32,9 @@ r_name_from_c <- function(c_symbol, namespace) {
   paste0(pts[1], tail)
 }
 
-generate_r_function <- function(fn, namespace) {
-  if (!nonempty(fn$c_symbol)) return("")
+generate_r_function <- function(fn, namespace, callbacks_by_name = list()) {
+  if (!nonempty(fn$c_symbol)) return(skip(fn, "no c_symbol"))
 
-  # ============================================================================
-  # GTK Version Compatibility Filter (must match generate_c.R)
-  # ============================================================================
   MIN_VERSIONS <- list(
     "GLib"      = "2.56",
     "GObject"   = "2.56",
@@ -77,7 +65,7 @@ generate_r_function <- function(fn, namespace) {
   if (!is.null(namespace_detect) && !is.null(fn$version) && !is.na(fn$version)) {
     min_version <- MIN_VERSIONS[[namespace_detect]]
     if (!is.null(min_version) && compareVersion(fn$version, min_version) > 0) {
-      return("")
+      return(skip(fn, sprintf("version filter: %s > %s for %s", fn$version, min_version, namespace_detect)))
     }
   }
 
@@ -92,42 +80,68 @@ generate_r_function <- function(fn, namespace) {
   all_types <- paste(c(fn$return_type, sapply(fn$params, function(p) p$type)), collapse = " ")
   for (newer_type in newer_types) {
     if (grepl(newer_type, all_types, fixed = TRUE)) {
-      return("")
+      return(skip(fn, sprintf("references newer type %s", newer_type)))
     }
   }
 
   if (grepl("^gdk_rgba_print|^gtk_svg_error_quark", fn$c_symbol)) {
-    return("")
+    return(skip(fn, "explicit name skip"))
   }
 
   if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_|^g_dbus_|^g_subprocess_|_unix_fd|_unix_user|_unix_pid|gdk_pixbuf_non_anim", fn$c_symbol)) {
-    return("")
+    return(skip(fn, "regex blacklist"))
   }
 
-  # Skip varargs functions
   if (any(sapply(fn$params, function(p)
-    identical(p$name,"...") || identical(p$type$gi,"GLib.VarArgs")))) return("")
+    identical(p$name,"...") || identical(p$type$gi,"GLib.VarArgs")))) {
+    return(skip(fn, "variadic"))
+  }
 
-  # Skip callback functions
-  if (any(sapply(fn$params, function(p) {
-    if (!identical(p$direction,"in")) return(FALSE)
-    gi <- p$type$gi; nonempty(gi) && grepl("Func$|Notify$|Callback$|^GLib\\.VarArgs", gi)
-  }))) return("")
+  roles <- classify_param_roles(fn$params, callbacks_by_name)
 
-  r_name    <- r_name_from_c(fn$c_symbol, namespace)
-  in_params <- Filter(function(p) identical(p$direction,"in"), fn$params)
+  is_destroy_typed <- function(gi) {
+    if (is.null(gi) || is.na(gi)) return(FALSE)
+    gi %in% c("GLib.DestroyNotify", "DestroyNotify", "GDestroyNotify") ||
+      grepl("DestroyNotify$", gi)
+  }
+  for (i in seq_along(fn$params)) {
+    p <- fn$params[[i]]
+    if (!identical(p$direction, "in")) next
+    if (looks_like_callback(p$type$gi) && roles[i] == "normal" &&
+        !is_destroy_typed(p$type$gi)) {
+      return(skip(fn, sprintf("param %d (%s) looks like callback but no role", i, p$type$gi)))
+    }
+  }
 
-  # Use actual parameter names from GIR, sanitized for R
-  args <- if (length(in_params) > 0) {
-    sapply(in_params, function(p) {
+  for (i in seq_along(fn$params)) {
+    if (roles[i] != "callback") next
+    cb_def <- callback_lookup(callbacks_by_name, fn$params[[i]]$type$gi)
+    if (is.null(cb_def)) return(skip(fn, sprintf("no <callback> def for param %d (%s)", i, fn$params[[i]]$type$gi)))
+    if (!isTRUE(callback_signature(cb_def)$ok)) {
+      return(skip(fn, sprintf("callback %s rejected by signature check", cb_def$name)))
+    }
+  }
+
+  r_name <- r_name_from_c(fn$c_symbol, namespace)
+
+  # Visible "in" params: drop user_data and destroy.
+  visible_in <- list()
+  visible_idx_in_params <- integer()
+  for (i in seq_along(fn$params)) {
+    p <- fn$params[[i]]
+    if (!identical(p$direction, "in")) next
+    if (roles[i] %in% c("user_data", "destroy")) next
+    visible_in[[length(visible_in) + 1L]] <- p
+    visible_idx_in_params <- c(visible_idx_in_params, i)
+  }
+
+  args <- if (length(visible_in) > 0) {
+    sapply(visible_in, function(p) {
       name <- p$name
-      # Sanitize: replace invalid R identifier characters
       name <- gsub("[^a-zA-Z0-9_]", "_", name)
-      # Avoid R keywords
       if (name %in% c("if", "else", "for", "while", "function", "return", "break", "next", "repeat", "in", "NULL", "TRUE", "FALSE", "NA", "NaN", "Inf")) {
         name <- paste0(name, "_")
       }
-      # Ensure doesn't start with a number
       if (grepl("^[0-9]", name)) {
         name <- paste0("x", name)
       }
@@ -139,20 +153,20 @@ generate_r_function <- function(fn, namespace) {
 
   args_csv  <- paste(args, collapse=", ")
 
-  # Build call_args with automatic type conversions
   if (length(args) > 0) {
-    converted_args <- sapply(seq_along(in_params), function(i) {
-      p <- in_params[[i]]
+    converted_args <- sapply(seq_along(visible_in), function(i) {
+      p <- visible_in[[i]]
       arg_name <- args[i]
       gi <- p$type$gi
 
-      # Auto-convert to integer for integer types
-      # Note: gssize, goffset, gint64, glong, guint32 can be large or negative,
-      # so they're handled as numeric (REAL) in C code
       integer_types <- c("gint", "guint", "gint8", "guint8", "gint16", "guint16",
                          "gint32", "guint64", "gulong", "gsize")
 
-      if (!is.null(gi) && gi %in% integer_types) {
+      param_role <- roles[visible_idx_in_params[i]]
+      if (param_role == "callback") {
+        # Pass the function unchanged; C side handles RCallbackClosure.
+        arg_name
+      } else if (!is.null(gi) && gi %in% integer_types) {
         sprintf("as.integer(%s)", arg_name)
       } else {
         arg_name
@@ -163,14 +177,13 @@ generate_r_function <- function(fn, namespace) {
     call_args <- ""
   }
 
-  # Generate roxygen2 documentation
-  # Create @param entries for each parameter
-  param_docs <- if (length(in_params) > 0) {
-    sapply(seq_along(in_params), function(i) {
-      p <- in_params[[i]]
+  param_docs <- if (length(visible_in) > 0) {
+    sapply(seq_along(visible_in), function(i) {
+      p <- visible_in[[i]]
       param_name <- args[i]
-      # Basic type description from GI type
-      type_desc <- if (!is.null(p$type$gi) && !is.na(p$type$gi)) {
+      type_desc <- if (roles[visible_idx_in_params[i]] == "callback") {
+        sprintf("function — %s callback", p$type$gi)
+      } else if (!is.null(p$type$gi) && !is.na(p$type$gi)) {
         p$type$gi
       } else if (!is.null(p$type$c) && !is.na(p$type$c)) {
         p$type$c
@@ -183,15 +196,12 @@ generate_r_function <- function(fn, namespace) {
     character(0)
   }
 
-  # Return type description
   ret_desc <- if (!is.null(fn$return_type$gi) && !is.na(fn$return_type$gi) && fn$return_type$gi != "none") {
     sprintf("#' @return %s", fn$return_type$gi)
   } else {
     "#' @return Return value from C function"
   }
 
-  # Determine family/category from function name pattern
-  # Use specific subcategories to keep groups manageable (5-20 functions each)
   family <- if (grepl("^gtk_window_", fn$c_symbol)) {
     "gtk-windows"
   } else if (grepl("^gtk_button_|^gtk_toggle_button_|^gtk_check_button_|^gtk_radio_button_", fn$c_symbol)) {
@@ -258,7 +268,6 @@ generate_r_function <- function(fn, namespace) {
     tolower(namespace)
   }
 
-  # Build roxygen block with @rdname to combine into single Rd file
   roxygen_lines <- c(
     sprintf("#' @rdname %s", family),
     sprintf("#' @title %s", r_name),
@@ -269,17 +278,8 @@ generate_r_function <- function(fn, namespace) {
   )
   roxygen_block <- paste(roxygen_lines, collapse = "\n")
 
-  # Identify what the C function returns
-  # ret_gi is the return type of the C function itself
   ret_gi <- if (is.null(fn$return_type$gi)) "none" else fn$return_type$gi
-
-  # out_params are variables passed by reference (the ones causing the $data, $iter issues)
   out_params <- Filter(function(p) p$direction %in% c("out", "inout"), fn$params)
-
-  # --- AUTO-UNWRAP LOGIC ---
-  # If it returns a value and has NO out-params, unwrap $result
-  # If it returns void but has exactly ONE out-param, unwrap that param's name
-  # If it returns void and has NO out-params, wrap with invisible()
 
   unwrap_suffix <- ""
   wrap_invisible <- FALSE
@@ -287,15 +287,12 @@ generate_r_function <- function(fn, namespace) {
   if (ret_gi != "none" && length(out_params) == 0) {
     unwrap_suffix <- "$result"
   } else if (ret_gi == "none" && length(out_params) == 1) {
-    # Sanitize the out-param name just like we did for args
     out_name <- gsub("[^a-zA-Z0-9_]", "_", out_params[[1]]$name)
     unwrap_suffix <- paste0("$", out_name)
   } else if (ret_gi == "none" && length(out_params) == 0) {
-    # Void function with no outputs - wrap with invisible()
     wrap_invisible <- TRUE
   }
 
-  # Build the final function string
   call_expr <- paste0(".Call(\"R_", fn$c_symbol, "\"", call_args, ")", unwrap_suffix)
   if (wrap_invisible) {
     call_expr <- paste0("invisible(", call_expr, ")")
