@@ -227,7 +227,15 @@ callback_signature <- function(cb) {
                      "GDBusMethodInvocation", "GDBusObjectProxy",
                      "GSubprocess", "GSubprocessLauncher",
                      "GTlsConnection", "GDtlsConnection",
-                     "GdkPixbufModule")
+                     "GdkPixbufModule",
+                     "GtkAccessibleHypertext", "GtkAccessibleHyperlink",
+                     "GtkTextBufferNotifyFlags",
+                     "GskRenderReplay",
+                     "GskPathIntersection",
+                     "GskComponentTransfer",
+                     "GskIsolation",
+                     "GskPorterDuff",
+                     "GdkColorChannel")
   all_types <- paste(c(cb$return_type$c, cb$return_type$gi,
                        sapply(cb$params, function(p) c(p$type$c, p$type$gi))),
                      collapse = " ")

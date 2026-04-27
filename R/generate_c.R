@@ -320,6 +320,7 @@ generate_c_function <- function(fn, callbacks_by_name = list()) {
     "Gio"       = "2.56",
     "Gdk"       = "4.12",
     "Gtk"       = "4.12",
+    "Gsk"       = "4.12",
     "Pango"     = "1.50",
     "GdkPixbuf" = "2.42"
   )
@@ -353,7 +354,15 @@ generate_c_function <- function(fn, callbacks_by_name = list()) {
     "GdkCicpParams", "GdkColorState",
     "GtkSymbolicPaintable",
     "GdkToplevelCapabilities",
-    "GtkPopoverBin"
+    "GtkPopoverBin",
+    "GtkAccessibleHypertext", "GtkAccessibleHyperlink",
+    "GtkTextBufferNotifyFlags",
+    "GskRenderReplay",
+    "GskPathIntersection",
+    "GskComponentTransfer",
+    "GskIsolation",
+    "GskPorterDuff",
+    "GdkColorChannel"
   )
 
   all_types <- paste(c(fn$return_type, sapply(fn$params, function(p) p$type)), collapse = " ")
@@ -363,11 +372,11 @@ generate_c_function <- function(fn, callbacks_by_name = list()) {
     }
   }
 
-  if (grepl("^gdk_rgba_print|^gtk_svg_error_quark", fn$c_symbol)) {
+  if (grepl("^gdk_rgba_print|^gtk_svg_error_quark|^gsk_render_node_get_children|^gsk_render_node_get_opaque_rect|^gsk_transform_matrix_2d|^gsk_composite_node_get_child|^gsk_composite_node_get_mask", fn$c_symbol)) {
     return(skip(fn, "explicit name skip (rgba_print / svg_error_quark)"))
   }
 
-  if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_|^g_dbus_|^g_subprocess_|_unix_fd|_unix_user|_unix_pid|gdk_pixbuf_non_anim", fn$c_symbol)) {
+  if (grepl("^_|^g_osx_|^g_win32_|^g_msys_|^gtk_osx_|^g_unix_|^g_atomic_|^g_io_module_|^g_once_init_|^gtk_print_|^gtk_printer_|^gtk_enumerate_printers|^g_pointer_bit_|^g_dtls_|^g_tls_|^gtk_page_|^g_dbus_|^g_subprocess_|_unix_fd|_unix_user|_unix_pid|gdk_pixbuf_non_anim|^gsk_path_|^gsk_component_transfer_|^gsk_isolation_|^gsk_porter_duff_|^gsk_copy_node_|^gsk_paste_node_", fn$c_symbol)) {
     return(skip(fn, "regex blacklist (subsystems disabled)"))
   }
 
