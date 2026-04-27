@@ -163,8 +163,16 @@ generate_r_function <- function(fn, namespace, callbacks_by_name = list()) {
                          "gint32", "guint64", "gulong", "gsize")
 
       param_role <- roles[visible_idx_in_params[i]]
+      ct <- p$type$c
+      is_ptr_ct <- !is.null(ct) && !is.na(ct) &&
+        (grepl("\\*", ct) || ct %in% c("gpointer", "gconstpointer"))
+      is_array <- isTRUE(p$type$is_array)
       if (param_role == "callback") {
-        # Pass the function unchanged; C side handles RCallbackClosure.
+        arg_name
+      } else if (is_ptr_ct || is_array) {
+        # Pointer / array param — never coerce. The element GI may be
+        # integral (e.g. const guchar* arrays have GI "guint8") but the
+        # value is a pointer to bytes, not a number.
         arg_name
       } else if (!is.null(gi) && gi %in% integer_types) {
         sprintf("as.integer(%s)", arg_name)
