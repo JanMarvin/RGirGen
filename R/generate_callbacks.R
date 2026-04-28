@@ -290,10 +290,9 @@ generate_callback_trampoline <- function(cb) {
   if (isTRUE(s$has_user_data)) {
     ud_name <- gsub("[^a-zA-Z0-9_]", "_", cb$params[[s$ud_idx]]$name)
     if (!nzchar(ud_name)) ud_name <- "arg"
-    body <- c(body, sprintf("  RCallbackClosure *rc = (RCallbackClosure *)%s;", ud_name))
+    body <- c(body, sprintf("  RCallbackClosure *rc = rgtk4_closure_check(%s);", ud_name))
   } else {
-    # No user_data slot — fetch from thread-local register set by binding.
-    body <- c(body, "  RCallbackClosure *rc = rgtk4_current_closure();")
+    body <- c(body, "  RCallbackClosure *rc = rgtk4_closure_check(rgtk4_current_closure());")
   }
 
   arg_lines <- character()
