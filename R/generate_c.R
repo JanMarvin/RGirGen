@@ -154,6 +154,63 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL, callbacks_by_
     "  return 0.0;",
     "}",
     "",
+    "/* Bounded numeric extraction. NA and out-of-range values throw. */",
+    "static inline gint64 _unbox_int_range(SEXP s, gint64 lo, gint64 hi, const char *func) __attribute__((unused));",
+    "static inline gint64 _unbox_int_range(SEXP s, gint64 lo, gint64 hi, const char *func) {",
+    "  double v;",
+    "  if (TYPEOF(s) == INTSXP) {",
+    "    int iv = INTEGER(s)[0];",
+    "    if (iv == NA_INTEGER) Rf_error(\"%s: NA not allowed for integer argument\", func);",
+    "    v = (double)iv;",
+    "  } else if (TYPEOF(s) == REALSXP) {",
+    "    v = REAL(s)[0];",
+    "    if (!R_finite(v)) Rf_error(\"%s: NA/Inf not allowed for integer argument\", func);",
+    "  } else if (TYPEOF(s) == LGLSXP) {",
+    "    int lv = LOGICAL(s)[0];",
+    "    if (lv == NA_LOGICAL) Rf_error(\"%s: NA not allowed for integer argument\", func);",
+    "    v = (double)lv;",
+    "  } else {",
+    "    Rf_error(\"%s: expected numeric scalar, got %s\", func, Rf_type2char(TYPEOF(s)));",
+    "  }",
+    "  if (v < (double)lo || v > (double)hi) {",
+    "    Rf_error(\"%s: value %.0f out of range [%lld, %lld]\", func, v, (long long)lo, (long long)hi);",
+    "  }",
+    "  return (gint64)v;",
+    "}",
+    "",
+    "static inline double _unbox_real(SEXP s, const char *func) __attribute__((unused));",
+    "static inline double _unbox_real(SEXP s, const char *func) {",
+    "  if (TYPEOF(s) == REALSXP) {",
+    "    double v = REAL(s)[0];",
+    "    if (ISNA(v)) Rf_error(\"%s: NA not allowed for numeric argument\", func);",
+    "    return v;",
+    "  }",
+    "  if (TYPEOF(s) == INTSXP) {",
+    "    int iv = INTEGER(s)[0];",
+    "    if (iv == NA_INTEGER) Rf_error(\"%s: NA not allowed for numeric argument\", func);",
+    "    return (double)iv;",
+    "  }",
+    "  if (TYPEOF(s) == LGLSXP) {",
+    "    int lv = LOGICAL(s)[0];",
+    "    if (lv == NA_LOGICAL) Rf_error(\"%s: NA not allowed for numeric argument\", func);",
+    "    return (double)lv;",
+    "  }",
+    "  Rf_error(\"%s: expected numeric scalar, got %s\", func, Rf_type2char(TYPEOF(s)));",
+    "  return 0.0;  /* unreachable */",
+    "}",
+    "",
+    "#define _UNBOX_GINT(s)   ((gint)  _unbox_int_range((s), G_MININT,    G_MAXINT,    __func__))",
+    "#define _UNBOX_GUINT(s)  ((guint) _unbox_int_range((s), 0,           G_MAXUINT,   __func__))",
+    "#define _UNBOX_GINT8(s)  ((gint8) _unbox_int_range((s), G_MININT8,   G_MAXINT8,   __func__))",
+    "#define _UNBOX_GUINT8(s) ((guint8)_unbox_int_range((s), 0,           G_MAXUINT8,  __func__))",
+    "#define _UNBOX_GINT16(s) ((gint16)_unbox_int_range((s), G_MININT16,  G_MAXINT16,  __func__))",
+    "#define _UNBOX_GUINT16(s)((guint16)_unbox_int_range((s),0,           G_MAXUINT16, __func__))",
+    "#define _UNBOX_GINT32(s) ((gint32)_unbox_int_range((s), G_MININT32,  G_MAXINT32,  __func__))",
+    "#define _UNBOX_GUINT32(s)((guint32)_unbox_int_range((s),0,           G_MAXUINT32, __func__))",
+    "#define _UNBOX_GINT64(s) ((gint64)_unbox_int_range((s), G_MININT64,  G_MAXINT64,  __func__))",
+    "#define _UNBOX_GSIZE(s)  ((gsize) _unbox_int_range((s), 0,           G_MAXINT64,  __func__))",
+    "#define _UNBOX_GBOOL(s)  ((gboolean)(Rf_asLogical(s) == TRUE))",
+    "",
     "/* Safe pointer extraction with validation */",
     "static inline void* get_ptr_internal(SEXP s, const char* func) __attribute__((unused));",
     "static inline void* get_ptr_internal(SEXP s, const char* func) {",
@@ -161,9 +218,22 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL, callbacks_by_
     "  if (TYPEOF(s) != EXTPTRSXP) {",
     "    Rf_error(\"%s: expected external pointer, got %s\", func, Rf_type2char(TYPEOF(s)));",
     "  }",
-    "  return R_ExternalPtrAddr(s);",
+    "  void *addr = R_ExternalPtrAddr(s);",
+    "  if (!addr) {",
+    "    Rf_error(\"%s: external pointer is NULL (object may have been destroyed)\", func);",
+    "  }",
+    "  return addr;",
     "}",
     "#define get_ptr(s) get_ptr_internal(s, __func__)",
+    "",
+    "/* GTK init guard. Bindings that touch GTK/GDK call",
+    "   RGTK4_REQUIRE_INIT at entry to surface a clean error rather than",
+    "   crash on uninitialized state. Uses gtk_is_initialized() directly. */",
+    "#define RGTK4_REQUIRE_INIT() do { \\",
+    "  if (!gtk_is_initialized()) { \\",
+    "    Rf_error(\"%s: gtkInit() has not been called — call gtkInit() first\", __func__); \\",
+    "  } \\",
+    "} while (0)",
     "",
     "static void _finalizer_g_free(SEXP s) __attribute__((unused));",
     "static void _finalizer_g_free(SEXP s) {",
@@ -172,7 +242,7 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL, callbacks_by_
     "}",
     "",
     "extern SEXP make_gobject_ptr(gpointer obj);",
-    "extern SEXP make_boxed_struct(const void *src, size_t size);",
+    "extern SEXP make_boxed_struct(const void *src, size_t size, const char *type_name);",
     "",
     "static SEXP _box_GStrv(char **strv) __attribute__((unused));",
     "static SEXP _box_GStrv(char **strv) {",
@@ -188,6 +258,7 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL, callbacks_by_
     "  if (ptr == R_NilValue || TYPEOF(ptr) != EXTPTRSXP) return ptr;",
     "  void *obj = R_ExternalPtrAddr(ptr);",
     "  if ((uintptr_t)obj < 0x1000) {",
+    "    R_SetExternalPtrTag(ptr, Rf_mkChar(fallback_name));",
     "    SEXP classes = PROTECT(Rf_allocVector(STRSXP, 3));",
     "    SET_STRING_ELT(classes, 0, Rf_mkChar(fallback_name));",
     "    SET_STRING_ELT(classes, 1, Rf_mkChar(\"GObject\"));",
@@ -197,13 +268,16 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL, callbacks_by_
     "    return ptr;",
     "  }",
     "  if (G_IS_OBJECT(obj)) {",
+    "    const char *tn = G_OBJECT_TYPE_NAME(obj);",
+    "    R_SetExternalPtrTag(ptr, Rf_mkChar(tn ? tn : fallback_name));",
     "    SEXP classes = PROTECT(Rf_allocVector(STRSXP, 3));",
-    "    SET_STRING_ELT(classes, 0, Rf_mkChar(G_OBJECT_TYPE_NAME(obj)));",
+    "    SET_STRING_ELT(classes, 0, Rf_mkChar(tn ? tn : fallback_name));",
     "    SET_STRING_ELT(classes, 1, Rf_mkChar(\"GObject\"));",
     "    SET_STRING_ELT(classes, 2, Rf_mkChar(\"RGtkObject\"));",
     "    Rf_setAttrib(ptr, R_ClassSymbol, classes);",
     "    UNPROTECT(1);",
     "  } else {",
+    "    R_SetExternalPtrTag(ptr, Rf_mkChar(fallback_name));",
     "    SEXP classes = PROTECT(Rf_allocVector(STRSXP, 3));",
     "    SET_STRING_ELT(classes, 0, Rf_mkChar(fallback_name));",
     "    SET_STRING_ELT(classes, 1, Rf_mkChar(\"GObject\"));",
@@ -266,6 +340,7 @@ resolve_in_param <- function(p, s_nm) {
   ct  <- p$type$c;   if (is.null(ct)  || is.na(ct))  ct  <- ""
   cls <- classify_type(p$type)
   posix_structs <- c("tm", "utimbuf", "stat")
+  nullable <- isTRUE(p$nullable)
 
   if (cls == "none") return(list(decl_type = "gpointer", unbox_expr = "NULL"))
 
@@ -598,15 +673,14 @@ generate_c_function <- function(fn, callbacks_by_name = list()) {
       type_label <- if (nonempty(it$type$gi)) it$type$gi else "gpointer"
 
       box_expr <- if (bare_ct %in% KNOWN_STRUCT_TYPES && !it$is_ptr) {
-        sprintf("make_boxed_struct(&%s, sizeof(%s))", it$var, bare_ct)
+        sprintf("make_boxed_struct(&%s, sizeof(%s), \"%s\")",
+                it$var, bare_ct, bare_ct)
       } else if (bare_ct %in% KNOWN_STRUCT_TYPES && it$is_ptr) {
-        # Pointer-returning boxed-struct constructors (graphene_rect_alloc,
-        # graphene_rect_init, etc.). Don't run through make_gobject_ptr or
-        # tag_pointer — both call G_IS_OBJECT, which dereferences the
-        # pointer as if it were a GTypeInstance. For a non-GObject struct
-        # those bytes are arbitrary and the read may crash. We tag the
-        # extptr's class statically below instead.
-        sprintf("R_MakeExternalPtr((void*)%s, R_NilValue, R_NilValue)", val_expr)
+        # Pointer-returning boxed-struct constructors. Tag with the C type
+        # name so RGTK4_GET_PTR's tag comparison matches param specs that
+        # are also derived from the C type.
+        sprintf("R_MakeExternalPtr((void*)%s, Rf_mkChar(\"%s\"), R_NilValue)",
+                val_expr, bare_ct)
       } else if (it$type$gi %in% c("utf8", "filename") && !grepl("\\*\\s*\\*", it$type$c)) {
         sprintf("Rf_mkString(%s ? (const char*)%s : \"\")", val_expr, val_expr)
       } else if (is_item_scalar) {
@@ -649,5 +723,9 @@ generate_c_function <- function(fn, callbacks_by_name = list()) {
     body <- paste0(body, "  return R_NilValue;")
   }
 
-  sprintf("\nSEXP R_%s(%s) {\n%s\n%s\n}\n", fn$c_symbol, sexp_args, paste(decls, collapse="\n"), body)
+  init_exempt <- fn$c_symbol %in% c("gtk_init", "gtk_init_check", "gtk_is_initialized",
+                                    "gtk_disable_setlocale")
+  needs_gtk <- grepl("^(gtk_|gdk_|gsk_)", fn$c_symbol)
+  guard <- if (init_exempt || !needs_gtk) "" else "  RGTK4_REQUIRE_INIT();\n"
+  sprintf("\nSEXP R_%s(%s) {\n%s%s\n%s\n}\n", fn$c_symbol, sexp_args, guard, paste(decls, collapse="\n"), body)
 }
