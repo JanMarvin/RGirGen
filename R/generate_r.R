@@ -199,7 +199,21 @@ generate_r_function <- function(fn, namespace, callbacks_by_name = list()) {
       p <- visible_in[[i]]
       param_name <- args[i]
       type_desc <- if (roles[visible_idx_in_params[i]] == "callback") {
-        sprintf("function — %s callback", p$type$gi)
+        cb_def <- callback_lookup(callbacks_by_name, p$type$gi)
+        cb_sig <- if (!is.null(cb_def)) {
+          ud_idx <- find_user_data_index(cb_def$params)
+          r_params <- vapply(seq_along(cb_def$params), function(j) {
+            if (!is.na(ud_idx) && j == ud_idx) return(NA_character_)
+            nm <- cb_def$params[[j]]$name
+            if (is.null(nm) || is.na(nm) || !nzchar(nm)) nm <- sprintf("arg%d", j)
+            nm
+          }, character(1))
+          r_params <- r_params[!is.na(r_params)]
+          sprintf("function(%s)", paste(r_params, collapse = ", "))
+        } else {
+          "function"
+        }
+        sprintf("function — %s %s", p$type$gi, cb_sig)
       } else if (!is.null(p$type$gi) && !is.na(p$type$gi)) {
         p$type$gi
       } else if (!is.null(p$type$c) && !is.na(p$type$c)) {

@@ -615,6 +615,11 @@ generate_c_function <- function(fn, callbacks_by_name = list()) {
                             paste(no_ud_closures, collapse = ", "))))
   }
 
+  init_exempt <- fn$c_symbol %in% c("gtk_init", "gtk_init_check", "gtk_is_initialized",
+                                    "gtk_disable_setlocale")
+  needs_gtk <- grepl("^(gtk_|gdk_|gsk_)", fn$c_symbol)
+  guard <- if (init_exempt || !needs_gtk) "" else "  RGTK4_REQUIRE_INIT();\n"
+
   ret_gi <- fn$return_type$gi; if (is.null(ret_gi) || is.na(ret_gi)) ret_gi <- "none"
   items_to_return <- list()
   call_str <- sprintf("%s(%s)", fn$c_symbol, paste(call_args, collapse = ", "))
@@ -632,6 +637,7 @@ generate_c_function <- function(fn, callbacks_by_name = list()) {
     is_ret_ptr <- c_type_is_pointer(fn$return_type$c)
     ret_decl <- if (is_ret_ptr) "gconstpointer" else fn$return_type$c
     body <- paste0(body, sprintf("  %s _ret = (%s)%s;\n", ret_decl, ret_decl, call_str))
+
     items_to_return[[1]] <- list(type=fn$return_type, var="_ret", name="result", is_ptr=is_ret_ptr, is_ret=TRUE)
   } else {
     body <- paste0(body, sprintf("  %s;\n", call_str))
@@ -684,7 +690,10 @@ generate_c_function <- function(fn, callbacks_by_name = list()) {
       } else if (it$type$gi %in% c("utf8", "filename") && !grepl("\\*\\s*\\*", it$type$c)) {
         sprintf("Rf_mkString(%s ? (const char*)%s : \"\")", val_expr, val_expr)
       } else if (is_item_scalar) {
-        sprintf("Rf_ScalarInteger((int)(%s))", val_expr)
+        if (bare_ct %in% c("gdouble", "gfloat", "double", "float"))
+          sprintf("Rf_ScalarReal((double)(%s))", val_expr)
+        else
+          sprintf("Rf_ScalarInteger((int)(%s))", val_expr)
       } else {
         if (it$is_ptr && !map$known) {
           sprintf("make_gobject_ptr((gpointer)%s)", val_expr)
@@ -723,9 +732,5 @@ generate_c_function <- function(fn, callbacks_by_name = list()) {
     body <- paste0(body, "  return R_NilValue;")
   }
 
-  init_exempt <- fn$c_symbol %in% c("gtk_init", "gtk_init_check", "gtk_is_initialized",
-                                    "gtk_disable_setlocale")
-  needs_gtk <- grepl("^(gtk_|gdk_|gsk_)", fn$c_symbol)
-  guard <- if (init_exempt || !needs_gtk) "" else "  RGTK4_REQUIRE_INIT();\n"
   sprintf("\nSEXP R_%s(%s) {\n%s%s\n%s\n}\n", fn$c_symbol, sexp_args, guard, paste(decls, collapse="\n"), body)
 }
