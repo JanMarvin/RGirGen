@@ -258,7 +258,7 @@ callback_signature <- function(cb) {
   ret_decl <- if (is_void) "void" else unbox_ret$decl
 
   decls <- vapply(cb$params, callback_param_decl, character(1))
-  sig <- paste(decls, collapse = ", ")
+  sig <- if (length(decls) > 0) paste(decls, collapse = ", ") else "void"
   fname <- trampoline_name(cb$name)
 
   list(
@@ -339,14 +339,26 @@ generate_callback_trampoline <- function(cb) {
 # ---------------------------------------------------------------------------
 
 generate_callbacks_file <- function(all_callbacks) {
-  trampolines <- vapply(all_callbacks, generate_callback_trampoline, character(1))
-  trampolines <- trampolines[nzchar(trampolines)]
+  trampolines <- character()
+  for (cb in all_callbacks) {
+    code <- generate_callback_trampoline(cb)
+    if (!nzchar(code)) next
+    if (identical(cb$namespace, "GtkSource")) {
+      trampolines <- c(trampolines,
+                       "#ifdef HAVE_GTKSOURCE", code, "#endif /* HAVE_GTKSOURCE */")
+    } else {
+      trampolines <- c(trampolines, code)
+    }
+  }
 
   header <- c(
     "#define R_NO_REMAP",
     "#include <R.h>",
     "#include <Rinternals.h>",
     "#include <gtk/gtk.h>",
+    "#ifdef HAVE_GTKSOURCE",
+    "#include <gtksourceview/gtksource.h>",
+    "#endif",
     "#include <glib.h>",
     "#include <glib-object.h>",
     "#include <gio/gio.h>",
@@ -370,7 +382,13 @@ generate_callbacks_header <- function(all_callbacks) {
   protos <- character()
   for (cb in all_callbacks) {
     s <- callback_signature(cb)
-    if (isTRUE(s$ok)) protos <- c(protos, s$prototype)
+    if (isTRUE(s$ok)) {
+      if (identical(cb$namespace, "GtkSource")) {
+        protos <- c(protos, "#ifdef HAVE_GTKSOURCE", s$prototype, "#endif")
+      } else {
+        protos <- c(protos, s$prototype)
+      }
+    }
   }
 
   body <- c(
@@ -378,6 +396,9 @@ generate_callbacks_header <- function(all_callbacks) {
     "#define RGTK4_AUTOGEN_CALLBACKS_H",
     "",
     "#include <gtk/gtk.h>",
+    "#ifdef HAVE_GTKSOURCE",
+    "#include <gtksourceview/gtksource.h>",
+    "#endif",
     "#include <glib.h>",
     "#include <glib-object.h>",
     "#include <gio/gio.h>",

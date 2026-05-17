@@ -13,6 +13,15 @@ generate_r_file <- function(parsed, namespace, seen_global = NULL, callbacks_by_
   r_fns <- sapply(unique_fns, function(fn) generate_r_function(fn, namespace, callbacks_by_name))
   r_fns <- r_fns[nchar(r_fns) > 0]
 
+  if (identical(namespace, "GtkSource")) {
+    guard <- paste0("  if (!.Call(\"R_have_gtksource\")) stop(",
+                    "\"GtkSourceView support was not compiled in. \",",
+                    "\"Install GtkSourceView 5 and reinstall Rgtk4.\", call. = FALSE)")
+    r_fns <- vapply(r_fns, function(code) {
+      sub("\\{", paste0("{\n", guard), code)
+    }, character(1))
+  }
+
   enums <- sapply(parsed$enums, function(e) {
     vals <- paste0(toupper(names(e$values)), " <- ", e$values)
     sprintf("\n# %s\n%s", e$name, paste(vals, collapse="\n"))

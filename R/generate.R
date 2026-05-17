@@ -22,6 +22,7 @@ generate_bindings <- function(gir_paths, out_dir) {
   callbacks_by_name <- list()
   for (parsed in all_parsed) {
     for (cb in parsed$callbacks) {
+      cb$namespace <- parsed$namespace
       cb$return_type <- enrich_type(cb$return_type, int_types_global)
       cb$params <- lapply(cb$params, function(p) {
         p$type <- enrich_type(p$type, int_types_global)

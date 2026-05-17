@@ -135,6 +135,9 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL, callbacks_by_
     "#include <R.h>",
     "#include <Rinternals.h>",
     "#include <gtk/gtk.h>",
+    "#ifdef HAVE_GTKSOURCE",
+    "#include <gtksourceview/gtksource.h>",
+    "#endif",
     "#include <glib.h>",
     "#include <stdint.h>",
     "#include <string.h>",
@@ -297,6 +300,10 @@ generate_c_file <- function(parsed, namespace, seen_global = NULL, callbacks_by_
     "#endif",
     ""
   ), collapse = "\n")
+
+  if (identical(namespace, "GtkSource")) {
+    blocks <- c("#ifdef HAVE_GTKSOURCE", blocks, "#endif /* HAVE_GTKSOURCE */")
+  }
 
   paste(c(header, blocks), collapse = "\n")
 }
