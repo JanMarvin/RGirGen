@@ -1,24 +1,22 @@
-#' @keywords internal
-#'
-#' Callback (function-pointer API) trampoline generation.
-#'
-#' GTK exposes two distinct callback mechanisms:
-#'   1. GObject signals — handled by g_signal_connect_closure with a single
-#'      generic marshaller (see rgtk4_signals.c). No code generation needed.
-#'   2. Plain C function-pointer parameters such as GtkDrawingAreaDrawFunc,
-#'      GCompareDataFunc, GAsyncReadyCallback. These have fixed C signatures
-#'      and require one trampoline per signature.
-#'
-#' This file handles category 2. For each <callback> definition in the GIR,
-#' we emit one C trampoline that:
-#'   - matches the callback's exact C signature
-#'   - converts each argument from C to SEXP using gi_type_to_map / int_entry
-#'   - invokes rgtk4_eval_callback with the R closure stored in user_data
-#'   - converts the R result back to the callback's return type, if any
-#'
-#' Generated bindings detect callback params via classify_callback_param() and
-#' emit the right registration sequence (allocate RCallbackClosure, pass
-#' trampoline + closure + rgtk4_closure_free as the destroy notify).
+# Callback (function-pointer API) trampoline generation.
+#
+# GTK exposes two distinct callback mechanisms:
+#   1. GObject signals — handled by g_signal_connect_closure with a single
+#      generic marshaller (see rgtk4_signals.c). No code generation needed.
+#   2. Plain C function-pointer parameters such as GtkDrawingAreaDrawFunc,
+#      GCompareDataFunc, GAsyncReadyCallback. These have fixed C signatures
+#      and require one trampoline per signature.
+#
+# This file handles category 2. For each <callback> definition in the GIR,
+# we emit one C trampoline that:
+#   - matches the callback's exact C signature
+#   - converts each argument from C to SEXP using gi_type_to_map / int_entry
+#   - invokes rgtk4_eval_callback with the R closure stored in user_data
+#   - converts the R result back to the callback's return type, if any
+#
+# Generated bindings detect callback params via classify_callback_param() and
+# emit the right registration sequence (allocate RCallbackClosure, pass
+# trampoline + closure + rgtk4_closure_free as the destroy notify).
 
 # ---------------------------------------------------------------------------
 # Parser additions: read <callback> nodes.

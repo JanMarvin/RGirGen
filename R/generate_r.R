@@ -151,7 +151,7 @@ generate_r_function <- function(fn, namespace, callbacks_by_name = list()) {
       if (name %in% c("if", "else", "for", "while", "function", "return", "break", "next", "repeat", "in", "NULL", "TRUE", "FALSE", "NA", "NaN", "Inf")) {
         name <- paste0(name, "_")
       }
-      if (grepl("^[0-9]", name)) {
+      if (grepl("^[0-9_]", name)) {
         name <- paste0("x", name)
       }
       name
